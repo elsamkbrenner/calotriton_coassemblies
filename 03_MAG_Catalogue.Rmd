@@ -1,0 +1,292 @@
+---
+title: "03_MAG_Catalogue"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Genome phylogeny
+```{r genome_phylogeny, message=FALSE, warning=FALSE, fig.height=10, fig.width=10, fig.fullwidth=TRUE}
+# Generate the phylum color heatmap
+phylum_heatmap <- read_tsv("https://raw.githubusercontent.com/earthhologenome/EHI_taxonomy_colour/main/ehi_phylum_colors.tsv") %>%
+    right_join(genome_metadata_bacteria, by=join_by(phylum == phylum)) %>% #Exclude archea
+    arrange(match(genome, genome_tree$tip.label)) %>%
+    select(genome,phylum) %>%
+    mutate(phylum = factor(phylum, levels = unique(phylum))) %>%
+    column_to_rownames(var = "genome")
+
+# Generate new species table
+newspecies_table <- genome_metadata_bacteria %>% 
+  mutate(newspecies=ifelse(species=="","Y","N")) %>% 
+  select(genome,newspecies) %>% 
+  column_to_rownames(var = "genome")
+
+# Generate  basal tree
+circular_tree <- force.ultrametric(genome_tree, method="extend") %>% # extend to ultrametric for the sake of visualisation
+    ggtree(., layout="fan", open.angle=10, size=0.2)
+
+# Add phylum ring
+circular_tree <- gheatmap(circular_tree, phylum_heatmap, offset=0.05, width=0.05, color=NA, colnames=FALSE) +
+        scale_fill_manual(values=phylum_colors, name = "Phylum") +
+guides(fill = guide_legend(override.aes = list(alpha = 1)))+
+        theme(legend.position = "none", plot.margin = margin(0, 0, 0, 0), panel.margin = margin(0, 0, 0, 0))
+
+# Flush color scale to enable a new color scheme in the next ring
+circular_tree <- circular_tree + new_scale_fill()
+
+# Add Completeness ring
+circular_tree <- circular_tree +
+        new_scale_fill() +
+        scale_fill_gradient(low = "#d1f4ba", high = "#f4baba") +
+        geom_fruit(
+                data=genome_metadata_bacteria,
+                geom=geom_bar,
+                mapping = aes(x=completeness, y=genome, fill=contamination),
+                offset = 0.24,
+                pwidth = 0.1,
+                orientation="y",
+              stat="identity")
+
+# Add genome-size ring
+circular_tree <- circular_tree + new_scale_fill()
+
+circular_tree <- gheatmap(circular_tree, newspecies_table, offset=0.15, width=0.05, color=NA, colnames=FALSE) +
+        scale_fill_manual(values=c("#f4f4f4","#74C8AE"), name = "New species")+
+        theme(legend.position = "none", plot.margin = margin(0, 0, 0, 0), panel.margin = margin(0, 0, 0, 0))
+
+circular_tree <- circular_tree + new_scale_fill()
+
+circular_tree <-  circular_tree +
+  geom_fruit(
+    data=genome_metadata_bacteria,
+    geom=geom_bar,
+    mapping = aes(x=size, y=genome),
+    fill = "#1e6e55",
+    offset = 0.05,
+    orientation="y",
+    stat="identity")
+
+circular_tree <-  circular_tree +
+  new_scale_fill() +
+  annotate('text', x=1.45, y=0, label='Phylum', family='sans', size=4, hjust = 0.004) +
+  annotate('text', x=1.7, y=0, label='Genome quality', family='sans', size=4, hjust = 0.004)+
+  annotate('text', x=1.9, y=0, label='Genome size', family='sans', size=4, hjust = 0.004) +
+  annotate('text', x=1.55, y=0, label='New species', family='sans', size=4, hjust = 0.01)
+
+#Plot circular tree
+circular_tree %>% open_tree(30) %>% rotate_tree(90)
+```
+
+Closer look at genome size
+```{r}
+ggplot(genome_metadata_bacteria, aes(x = size )) +
+  geom_histogram(binwidth = 100000, color = "black", fill = "grey70") +
+  theme_classic() +
+  labs(
+    x = "size",
+    y = "Number of MAGs"
+  )
+```
+
+## Genome quality
+
+```{r}
+genome_metadata_bacteria %>% 
+  summarise(contamination_mean=mean(contamination),sd_cont=sd(contamination),completeness_mean=mean(completeness),sd_comp=sd(completeness)) %>%
+  mutate(contamination=str_c(round(contamination_mean,2),"±",round(sd_cont,2)),
+         completeness=str_c(round(completeness_mean,2),"±",round(sd_comp,2))) %>% 
+  select(completeness, contamination) %>% 
+  tt()
+```
+```{r genome_quality_plot, message=FALSE, warning=FALSE, fig.height=8, fig.width=10, fig.fullwidth=TRUE}
+#Generate quality biplot
+genome_biplot <- genome_metadata_bacteria %>%
+  select(c(genome,domain,phylum,completeness,contamination,size)) %>%
+  arrange(match(genome, rev(genome_tree$tip.label))) %>% #sort MAGs according to phylogenetic tree
+  ggplot(aes(x=completeness,y=contamination,size=size,color=phylum)) +
+              geom_point(alpha=0.7) +
+                    ylim(c(10,0)) +
+                    scale_color_manual(values=phylum_colors) +
+                    labs(y= "contamination", x = "completeness") +
+                    theme_classic() +
+                    theme(legend.position = "none")
+
+#Generate contamination boxplot
+genome_contamination <- genome_metadata_bacteria %>%
+            ggplot(aes(y=contamination)) +
+                    ylim(c(10,0)) +
+                    geom_boxplot(colour = "#999999", fill="#cccccc") +
+                    theme_void() +
+                    theme(legend.position = "none",
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        axis.text.y=element_blank(),
+                        axis.ticks.y=element_blank(),
+                        axis.text.x=element_blank(),
+                        axis.ticks.x=element_blank(),
+                        plot.margin = unit(c(0, 0, 0.40, 0),"inches")) #add bottom-margin (top, right, bottom, left)
+
+#Generate completeness boxplot
+genome_completeness <- genome_metadata_bacteria %>%
+        ggplot(aes(x=completeness)) +
+                xlim(c(50,100)) +
+                geom_boxplot(colour = "#999999", fill="#cccccc") +
+                theme_void() +
+                theme(legend.position = "none",
+                    axis.title.x = element_blank(),
+                    axis.title.y = element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.ticks.y=element_blank(),
+                    axis.text.x=element_blank(),
+                    axis.ticks.x=element_blank(),
+                    plot.margin = unit(c(0, 0, 0, 0.50),"inches")) #add left-margin (top, right, bottom, left)
+
+#Render composite figure
+grid.arrange(grobs = list(genome_completeness,genome_biplot,genome_contamination),
+        layout_matrix = rbind(c(1,1,1,1,1,1,1,1,1,1,1,4),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3),
+                              c(2,2,2,2,2,2,2,2,2,2,2,3)))
+
+```
+
+Functional overview
+
+Number of predicted genes
+```{r}
+genome_annotations %>%
+  nrow()
+```
+
+Number of genes annotated to KEGG
+```{r}
+genome_annotations %>%
+  filter(source == "kegg") %>%
+  nrow()
+```
+
+## Functional overview
+
+```{r function_heatmap, message=FALSE, warning=FALSE, fig.height=20, fig.width=10, fig.fullwidth=TRUE}
+
+# Aggregate basal GIFT into elements
+function_table <- genome_gifts %>%
+    to.elements(., GIFT_db)
+
+# Generate  basal tree
+function_tree <- force.ultrametric(genome_tree, method="extend") %>%
+                ggtree(., size = 0.3) 
+
+#Add phylum colors next to the tree tips
+function_tree <- gheatmap(function_tree, phylum_heatmap, offset=0, width=0.1, color=NA, colnames=FALSE) +
+            scale_fill_manual(values=phylum_colors) +
+            labs(fill="Phylum")
+
+#Reset fill scale to use a different colour profile in the heatmap
+function_tree <- function_tree + new_scale_fill()
+
+#Add functions heatmap
+function_tree <- gheatmap(function_tree, function_table, offset=0.5, width=3.5, color=NA, colnames=FALSE) +
+            vexpand(.08) +
+            coord_cartesian(clip = "off") +
+            scale_fill_gradient(low = "#f4f4f4", high = "steelblue", na.value="white") +
+            labs(fill="GIFT")
+
+#Reset fill scale to use a different colour profile in the heatmap
+function_tree <- function_tree + new_scale_fill()
+
+# Add Completeness barplots
+function_tree <- function_tree +
+            geom_fruit(data=genome_metadata_bacteria,
+            geom=geom_bar,
+            grid.params=list(axis="x", text.size=2, nbreak = 1),
+            axis.params=list(vline=TRUE),
+            mapping = aes(x=size, y=genome, fill=completeness),
+                 offset = 3.95,
+                 orientation="y",
+                 stat="identity") +
+            scale_fill_gradient(low = "#cf8888", high = "#a2cc87") +
+            labs(fill="Genome\ncompleteness")
+
+function_tree
+```
+
+## Functional ordination
+
+PCoA functional ordination with PCA loadings.
+
+```{r function_ordination_pcoa, message=FALSE, fig.height=8, fig.width=10, fig.fullwidth=TRUE}
+gift_pcoa <- genome_gifts %>%
+    to.elements(., GIFT_db) %>%
+    as.data.frame() %>%
+    vegdist(method="euclidean") %>%
+    pcoa()
+
+gift_pcoa_rel_eigen <- gift_pcoa$values$Relative_eig[1:10]
+
+
+# Get genome positions
+gift_pcoa_vectors <- gift_pcoa$vectors %>% #extract vectors
+  as.data.frame() %>% 
+  select(Axis.1,Axis.2) # keep the first 2 axes
+
+gift_pcoa_eigenvalues <- gift_pcoa$values$Eigenvalues[c(1,2)]
+
+gift_pcoa_gifts <- cov(genome_gifts, scale(gift_pcoa_vectors)) %*% diag((gift_pcoa_eigenvalues/(nrow(genome_gifts)-1))^(-0.5)) %>%
+  as.data.frame() %>% 
+  rename(Axis.1=1,Axis.2=2) %>% 
+  rownames_to_column(var="label") %>% 
+  #get function summary vectors
+  mutate(func=substr(label,1,3)) %>% 
+  group_by(func) %>% 
+  summarise(Axis.1=mean(Axis.1),
+            Axis.2=mean(Axis.2)) %>% 
+  rename(label=func) %>% 
+  filter(!label %in% c("S01","S02","S03"))
+
+```
+```{r function_ordination_pcoa_plot, message=FALSE, fig.height=8, fig.width=10, fig.fullwidth=TRUE}
+scale <- 15
+gift_pcoa_vectors %>% 
+  rownames_to_column(var="genome") %>% 
+  left_join(genome_metadata_bacteria, by="genome") %>%
+  ggplot() +
+      #genome positions
+      scale_color_manual(values=phylum_colors)+
+      geom_point(aes(x=Axis.1,y=Axis.2, color=phylum, size=size), 
+                 alpha=0.9, shape=16) +
+      scale_size_continuous(range = c(0.1,5)) +
+      #loading positions
+      geom_segment(data=gift_pcoa_gifts, 
+                   aes(x=0, y=0, xend=Axis.1 * scale, yend=Axis.2 * scale),
+                    arrow = arrow(length = unit(0.3, "cm"), 
+                    type = "open", 
+                    angle = 25),
+                    linewidth = 0.5, 
+                    color = "black") +
+     #Primary and secondary scale adjustments
+     scale_x_continuous(name = paste0("PCoA1 (",round(gift_pcoa_rel_eigen[1]*100, digits = 2), " %)"),
+                      sec.axis = sec_axis(~ . / scale, name = "Loadings on PCoA1")
+            ) +
+     scale_y_continuous(name = paste0("PCoA2 (",round(gift_pcoa_rel_eigen[2]*100, digits = 2), " %)"),
+                      sec.axis = sec_axis(~ . / scale, name = "Loadings on PCoA2")
+            ) +
+    geom_label_repel(data = gift_pcoa_gifts,
+                     aes(label = label, x = Axis.1 * scale, y = Axis.2 * scale),
+                     segment.color = 'transparent') +
+    theme_minimal() + 
+    theme(legend.position = "none")
+```
+

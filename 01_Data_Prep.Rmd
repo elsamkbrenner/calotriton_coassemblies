@@ -1,0 +1,193 @@
+---
+title: "01_Data_Prep"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load Data
+
+Sample metadata
+```{r}
+# All sample metadata
+animal_metadata <- read_csv("data/animal_metadata.csv")
+sample_metadata <- read_csv("data/Airtable_metadata_coassemblies.csv")  %>%
+  left_join(animal_metadata, by = join_by(sample_code == sample))
+```
+1.2 Read Counts
+```{r}
+read_counts <- read_tsv("data/DMB0193_counts.tsv") %>%
+    rename(genome=1)
+```
+```{r}
+sample_metadata <- sample_metadata %>%
+  filter(EHI_number %in% colnames(read_counts)) %>%
+  arrange(match(EHI_number, colnames(read_counts)))
+```
+
+### Filter read counts
+```{r load_read_counts, warning=FALSE, comments="", message=FALSE, eval=TRUE}
+excluded_genomes <- c("EHA06514_bin_140") # excluded due to very large genome size
+
+read_counts <- read_counts %>%
+  select(one_of(c("genome",sample_metadata$EHI_number))) %>%
+  filter(!genome %in% excluded_genomes) %>%
+  filter(rowSums(across(-genome) != 0, na.rm = TRUE) > 0) %>%
+  select_if(~!all(. == 0)) 
+```
+
+1.3 Genome taxonomy
+```{r load_genome_metadata, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+genome_taxonomy <- read_tsv("data/DMB0193_genome_taxonomy.tsv") %>%
+  rename(genome = user_genome) %>% 
+  separate(
+    classification,
+    into  = c("domain", "phylum", "class", "order", "family", "genus","species"),
+    sep   = ";",
+    fill  = "right",
+    remove = TRUE
+  ) %>%
+  mutate(across(domain:species, ~ str_remove(., "^[a-z]__"))) %>% 
+  select(genome,domain,phylum,class,order,family,genus,species) %>% 
+  filter(genome %in% read_counts$genome)
+
+genome_features <- read_tsv("data/DMB0193_mag_info.tsv") %>%
+  rename(genome = magid) %>%
+  filter(genome %in% read_counts$genome)
+
+genome_metadata <- left_join(genome_taxonomy,genome_features, by="genome")
+
+genome_metadata <- genome_metadata %>% 
+  mutate(phylum = case_when(
+        phylum == "Bacillota_I" ~ "Bacillota",
+        TRUE ~ phylum))
+```
+
+1.4 Genome base hits (coverage)
+```{r load_genome_hits, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+genome_coverage <- read_tsv("data/DMB0193_bases.tsv") %>%
+  rename(genome = 1) %>%
+  filter(genome %in% read_counts$genome) %>%
+  select(one_of(c("genome",sample_metadata$EHI_number)))
+```
+
+
+1.6 Genome functional annotations
+```{r}
+genome_annotations <- read_tsv("data/gene_annotations.tsv") %>%
+  rename(genome = mag) %>%
+  filter(!genome %in% excluded_genomes) %>%
+  select(genome, everything())
+```
+
+1.5 Genome tree
+```{r load_genome_tree, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+genome_tree <- read_tree("data/bacteria.tree") 
+genome_tree$tip.label <- str_replace_all(genome_tree$tip.label,"'", "")
+genome_metadata_bacteria <- genome_metadata %>% 
+  filter(domain=="Bacteria")
+
+genome_tree <- ape::keep.tip(genome_tree, tip=genome_metadata_bacteria$genome)
+```
+
+2. Create working objects
+
+Transform the original data files into working objects for downstream analyses.
+
+```{r filter_coverage, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+min_coverage=0.3
+
+read_counts_filt <- read_counts %>%
+  select(genome) %>%
+  bind_cols(
+    genome_coverage %>%
+      select(-genome) %>% # drop genome column
+      mutate(across(everything(), ~ as.numeric(. > min_coverage))) %>% # 0/1 coverage
+      map2_df(.x = ., .y = read_counts %>% select(-genome), ~ .x * .y)  # multiply by read counts
+  )
+```
+
+### Transform reads into genome counts
+```{r calculate_genome_counts_unfiltered, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+readlength=150
+genome_counts_filt <- read_counts_filt %>%
+  slice(match(genome_metadata$genome, genome)) %>%  # reorder rows to match genome_metadata
+  mutate(across(where(is.numeric), ~ . / (genome_metadata$size / readlength)))
+```
+
+### Distill annotations into GIFTs
+```{r distill_annotations, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+genome_gifts <- distill(
+  genome_annotations,
+  GIFT_db,
+  genomecol = match("genome", names(genome_annotations)),
+  annotcol = match("annotation_id", names(genome_annotations)),
+  verbosity = TRUE
+)
+genome_gifts <- genome_gifts[, !grepl("^S", colnames(genome_gifts))]
+```
+
+## Prepare color scheme
+
+[AlberdiLab](www.alberdilab.dk) projects use unified color schemes developed for the [Earth Hologenome Initiative](www.earthhologenome.org), to facilitate figure interpretation.
+
+```{r get_ehi_colors, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+phylum_colors <- read_tsv("https://raw.githubusercontent.com/earthhologenome/EHI_taxonomy_colour/main/ehi_phylum_colors.tsv") %>%
+    mutate(phylum = str_remove(phylum, "^p__")) %>% 
+    right_join(genome_metadata, by=join_by(phylum == phylum)) %>%
+    arrange(match(genome, genome_tree$tip.label)) %>%
+    select(phylum, colors) %>%
+    unique() %>%
+    arrange(phylum) %>%
+    pull(colors, name=phylum)
+```
+
+2.1 Prepare phyloseq object
+```{r}
+library(phyloseq)
+
+phylo_samples <- sample_metadata %>% 
+  column_to_rownames("EHI_number") %>% 
+  sample_data() #convert to phyloseq sample_data object
+phylo_genome <- genome_counts_filt %>% 
+  column_to_rownames("genome") %>% 
+  otu_table(., taxa_are_rows = TRUE)
+phylo_taxonomy <- genome_metadata %>%
+  column_to_rownames("genome") %>% 
+  as.matrix() %>% 
+  tax_table() #convert to phyloseq tax_table object
+
+physeq_genome <- phyloseq(phylo_genome, phylo_taxonomy, phylo_samples)
+physeq_genome_clr <- microbiome::transform(physeq_genome, 'clr')
+```
+
+3.0 Wrap working objects
+
+All working objects are wrapped into a single Rdata object to facilitate downstream usage.
+
+### Taxonomic, and other host-associated data
+```{r wrap_working_objects, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+save(
+  sample_metadata,
+  genome_metadata,
+  read_counts,
+  genome_counts,
+  genome_counts_filt,
+  genome_tree, 
+  genome_gifts,
+  phylum_colors,
+  physeq_genome, 
+  physeq_genome_clr,
+  file = "data/coassemblies_data.Rdata"
+)
+```
+
+### Functional data
+```{r extra_objects, warning=FALSE, comments="", message=FALSE, eval=FALSE}
+save(genome_gifts, 
+     file = "data/coassemblies_genome_gifts.Rdata")
+```

@@ -1,0 +1,246 @@
+---
+title: "04_Community_Composition"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Taxonomy overview
+```{r}
+genome_counts_filt %>%
+  mutate_at(vars(-genome),~./sum(.)) %>% 
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>% 
+  left_join(., genome_metadata_bacteria, by = join_by(genome == genome)) %>% 
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0) %>% 
+  ggplot(., aes(x=sample,y=count, fill=phylum, group=phylum)) + 
+    geom_bar(stat="identity", colour="white", linewidth=0.1) + 
+    scale_fill_manual(values=phylum_colors) +
+    facet_grid(~ water_temp, scale="free", space="free")+
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+          axis.title.x = element_blank(),
+          panel.background = element_blank(),
+          panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "white"),
+    strip.text = element_text(size = 8, lineheight = 0.6),
+    strip.placement = "outside",
+    axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line = element_line(linewidth = 0.5, linetype = "solid", colour = "black")) +
+   labs(fill="Phylum",y = "Relative abundance",x="samples")
+```
+
+```{r phyla, comment="", message=FALSE, warning=FALSE}
+genome_metadata_bacteria %>% 
+  dplyr::select(phylum) %>%
+  unique() %>%
+  pull() %>%
+  length() %>% 
+  cat()
+```
+
+**Number of MAGs without species-level annotation**
+```{r nonspe, comment="", message=FALSE, warning=FALSE}
+genome_metadata_bacteria %>%
+  filter(species == "") %>%
+  summarize(Mag_nospecies = n())%>%
+  select(Mag_nospecies) %>% 
+  pull() %>% 
+  cat()
+```
+
+**Percentage of MAGs without species-level annotation**
+```{r sp_percet, comment="", message=FALSE, warning=FALSE}
+nmags <- nrow(genome_metadata_bacteria)
+nonspecies <- genome_metadata_bacteria %>%
+    filter(species == "") %>%
+    nrow()
+perct <- nonspecies*100/nmags
+perct %>% 
+  cat()
+```
+
+**Number of MAGs without genera-level annotation**
+```{r nongenera, comment="", message=FALSE, warning=FALSE}
+nongenera <- genome_metadata_bacteria %>%
+    filter(genus == "") %>%
+    nrow()
+cat(nongenera)
+```
+
+**Percentage of MAGs without genera-level annotation**
+```{r gen_percet, comment="", message=FALSE, warning=FALSE}
+perct_g <- nongenera*100/nmags
+perct_g %>% 
+  cat()
+```
+
+#### Phylum Relative abundances
+```{r}
+phylum_summary <- genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ . / sum(.)) %>% 
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  left_join(genome_metadata_bacteria, by = join_by(genome == genome)) %>%
+  group_by(sample, phylum) %>%
+  summarise(relabun = sum(count), .groups = "drop")
+```
+```{r}
+phylum_summary <- genome_counts_filt %>%
+  pivot_longer(
+    cols = -genome,
+    names_to = "sample",
+    values_to = "count"
+  ) %>%
+  left_join(genome_metadata_bacteria, by = join_by(genome == genome)) %>%
+  group_by(sample) %>%
+  mutate(sample_total = sum(count, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(sample, phylum) %>%
+  summarise(
+    phylum_count = sum(count, na.rm = TRUE),
+    sample_total = first(sample_total),
+    .groups = "drop"
+  ) %>%
+  mutate(rel_abundance = phylum_count / sample_total) %>%
+  group_by(phylum) %>%
+  summarise(
+    mean_rel_abundance = mean(rel_abundance, na.rm = TRUE),
+    sd_rel_abundance = sd(rel_abundance, na.rm = TRUE),
+    min_rel_abundance = min(rel_abundance, na.rm = TRUE),
+    max_rel_abundance = max(rel_abundance, na.rm = TRUE),
+    total_count = sum(phylum_count, na.rm = TRUE),
+    n_samples = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(mean_rel_abundance))
+```
+```{r}
+phylum_summary %>%
+  mutate(
+    mean_rel_abundance = round(mean_rel_abundance, 4),
+    sd_rel_abundance = round(sd_rel_abundance, 4),
+    min_rel_abundance = round(min_rel_abundance, 4),
+    max_rel_abundance = round(max_rel_abundance, 4)
+  ) %>%
+  tt()
+```
+
+# Relative abundance
+```{r}
+# set water temp as a factor, not a number, within physeq
+sample_data(physeq_genome)$water_temp <- factor(
+  sample_data(physeq_genome)$water_temp,
+  levels = c(10, 20)
+)
+```
+
+```{r}
+fit_mag_water_temp <- ancombc2(
+  data = physeq_genome,
+  fix_formula = "water_temp",
+  group = "water_temp",
+  global = FALSE,
+  pairwise = FALSE,
+  p_adj_method = "BH",
+  lib_cut = 0,
+  struc_zero = TRUE,
+  alpha = 0.05
+)
+
+mag_water_temp <- fit_mag_water_temp$res
+
+save(
+  fit_mag_water_temp,
+  mag_water_temp,
+  file = "data/coassemblies_ancombc.Rdata"
+)
+```
+```{r}
+mag_enriched_20 <- mag_water_temp %>%
+  filter(q_water_temp20 < 0.05) %>%
+  filter(lfc_water_temp20 > 0) %>%
+  arrange(desc(lfc_water_temp20))
+
+mag_enriched_20 %>%
+  nrow() %>%
+  cat()
+
+mag_enriched_20 %>%
+  tt()
+```
+```{r}
+mag_enriched_10 <- mag_water_temp %>%
+  filter(q_water_temp20 < 0.05) %>%
+  filter(lfc_water_temp20 < 0) %>%
+  arrange(lfc_water_temp20)
+
+mag_enriched_10 %>%
+  nrow() %>%
+  cat()
+
+mag_enriched_10 %>%
+  tt()
+```
+```{r}
+## Plotting
+taxonomy <- genome_metadata_bacteria %>%
+  distinct(genome, phylum) %>%
+  rename(taxon = genome)
+
+colors_alphabetic <- read_tsv("https://raw.githubusercontent.com/earthhologenome/EHI_taxonomy_colour/main/ehi_phylum_colors.tsv") %>%
+  mutate(phylum = str_replace(phylum, "[dpcofgs]__", "")) %>%
+  right_join(taxonomy %>% distinct(phylum), by = "phylum") %>%
+  select(phylum, colors) %>%
+  mutate(colors = str_c(colors, "80")) %>%
+  distinct() %>%
+  arrange(phylum)
+```
+```{r}
+plot_data <- mag_water_temp %>%
+  filter(q_water_temp20 < 0.05) %>%
+  mutate(
+    logFC = lfc_water_temp20,
+    enriched = case_when(
+      logFC > 0 ~ "20C",
+      logFC < 0 ~ "10C",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  left_join(genome_metadata_bacteria, by = join_by(taxon == genome))
+```
+```{r}
+tax_color <- plot_data %>%
+  distinct(phylum) %>%
+  left_join(colors_alphabetic, by = "phylum") %>%
+  arrange(phylum) %>%
+  pull(colors, name = phylum)
+```
+```{r}
+ggplot(plot_data, aes(x = reorder(taxon, logFC), y = logFC, fill = phylum)) +
+  geom_col() +
+  scale_fill_manual(values = tax_color, na.value = "grey70") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 6),
+    axis.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = "Enriched in 10C (- LFC) vs enriched in 20C (+ LFC)",
+    x = "MAGs",
+    y = "Log-Fold Change",
+    fill = "Phylum"
+  )
+```

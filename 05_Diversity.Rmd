@@ -1,0 +1,329 @@
+---
+title: "05_Diversity"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Alpha diversity
+```{r alpha_div, comment="", message=FALSE, warning=FALSE, eval=FALSE}
+richness <- genome_counts_filt %>%
+  column_to_rownames(var = "genome") %>%
+  dplyr::select(where(~ !all(. == 0))) %>%
+  hilldiv(q = 0) %>%
+  as.data.frame() %>%
+  dplyr::rename(richness = value)
+
+neutral <- genome_counts_filt %>%
+  column_to_rownames(var = "genome") %>%
+  dplyr::select(where(~ !all(. == 0))) %>%
+  hilldiv(q = 1) %>%
+  as.data.frame() %>%
+  dplyr::rename(neutral = value)
+
+phylogenetic <- genome_counts_filt %>%
+  filter(genome %in% genome_metadata_bacteria$genome) %>% 
+  column_to_rownames(var = "genome") %>%
+  dplyr::select(where(~ !all(. == 0))) %>%
+  hilldiv(q = 1, tree = genome_tree) %>%
+  as.data.frame() %>%
+  filter(type == "phylogenetic") %>%
+  dplyr::rename(phylogenetic = value)
+
+alpha_div <- richness %>%
+  dplyr::select(sample, richness) %>%
+  full_join(neutral %>% dplyr::select(sample, neutral), by = join_by(sample == sample)) %>%
+  full_join(phylogenetic %>% dplyr::select(sample, phylogenetic), by = join_by(sample == sample))
+```
+
+```{r save_alpha, eval=FALSE}
+save(alpha_div, file="data/alpha_coassemblies.RData")
+```
+
+```{r}
+alpha_div %>%
+  pivot_longer(-sample, names_to = "alpha", values_to = "value") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  group_by(alpha) %>%
+  summarise(
+    total_mean = mean(value, na.rm = T),
+    total_sd = sd(value, na.rm = T),
+    cold_mean = mean(value[water_temp == "10"], na.rm = T),
+    cold_sd = sd(value[water_temp == "10"], na.rm = T),
+    hot_mean = mean(value[water_temp == "20"], na.rm = T),
+    hot_sd = sd(value[water_temp == "20"], na.rm = T),
+  ) %>%
+  mutate(
+    Total = str_c(round(total_mean, 3), "±", round(total_sd, 3)),
+    "Cold" = str_c(round(cold_mean, 3), "±", round(cold_sd, 3)),
+    "Hot" = str_c(round(hot_mean, 3), "±", round(hot_sd, 3)),
+  ) %>%
+  arrange(-hot_mean) %>%
+  dplyr::select(alpha, Total, "Cold", "Hot") %>%
+  rename(Alpha=alpha) %>% 
+  tt()
+```
+```{r}
+# Alpha div by temp summary
+alpha_div %>%
+  pivot_longer(-sample, names_to = "metric", values_to = "value") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  mutate(water_temp = factor(water_temp, levels = c(10, 20))) %>%
+  ggplot(aes(
+    y = value,
+    x = water_temp,
+    group = water_temp,
+    color = water_temp,
+    fill = water_temp
+  )) +
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  facet_wrap(
+    ~ factor(
+      metric,
+      levels = c("richness", "neutral", "phylogenetic"),
+      labels = c("Richness", "Neutral", "Phylogenetic")
+    ),
+    scales = "free",
+    ncol = 5
+  ) +
+  theme_classic()
+```
+```{r}
+alpha_div %>%
+  pivot_longer(-sample, names_to = "metric", values_to = "value") %>%
+  mutate(metric=factor(metric,levels=c("richness","neutral","phylogenetic"))) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  group_by(metric) %>%
+  rstatix::wilcox_test(value ~ water_temp) %>% 
+  rstatix::adjust_pvalue(method = "BH") %>%
+  filter(p.adj < 0.05) %>% 
+  tt()
+```
+
+# Beta Div
+
+```{r}
+beta_q0n <- genome_counts_filt %>%
+  column_to_rownames(., "genome") %>%
+  filter(rowSums(. != 0, na.rm = TRUE) > 0) %>%
+  select_if(~!all(. == 0)) %>%
+  hillpair(., q = 0)
+
+beta_q1n <- genome_counts_filt %>%
+  column_to_rownames(., "genome") %>%
+  filter(rowSums(. != 0, na.rm = TRUE) > 0) %>%
+  select_if(~!all(. == 0)) %>%
+  hillpair(., q = 1)
+
+ beta_q1p <- genome_counts_filt %>%
+   filter(genome %in% genome_metadata_bacteria$genome) %>% 
+   column_to_rownames(., "genome") %>%
+   filter(rowSums(. != 0, na.rm = TRUE) > 0) %>%
+   select_if(~!all(. == 0)) %>%
+   hillpair(., q = 1, tree = genome_tree)
+
+save(beta_q0n, 
+     beta_q1n, 
+     beta_q1p, 
+     file = "data/coassemblies_beta.Rdata")
+```
+
+```{r}
+load("data/coassemblies_beta.Rdata")
+
+# set water temp as factor, not number
+sample_metadata_beta <- sample_metadata %>%
+  mutate(water_temp = factor(water_temp, levels = c(10, 20)))
+```
+
+```{r}
+# richness 
+beta_q0n_mat <- as.matrix(beta_q0n$q0S)
+
+beta_q0n_filtered <- beta_q0n_mat[
+  rownames(beta_q0n_mat) %in% sample_metadata_beta$EHI_number,
+  colnames(beta_q0n_mat) %in% sample_metadata_beta$EHI_number
+]
+
+beta_q0n_dis <- as.dist(beta_q0n_filtered)
+
+sample_metadata_q0n <- sample_metadata_beta %>%
+  filter(EHI_number %in% labels(beta_q0n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q0n_dis))) %>%
+  column_to_rownames("EHI_number")
+
+all(rownames(sample_metadata_q0n) == labels(beta_q0n_dis))
+
+betadisper(beta_q0n_dis, sample_metadata_q0n$water_temp) %>%
+  permutest(pairwise = TRUE)
+
+adonis2(
+  beta_q0n_dis ~ water_temp,
+  data = sample_metadata_q0n,
+  permutations = 999
+) %>%
+  broom::tidy() %>%
+  tt()
+```
+
+```{r}
+# Neutral beta diversity, q = 1
+
+beta_q1n_mat <- as.matrix(beta_q1n$q1S)
+
+beta_q1n_filtered <- beta_q1n_mat[
+  rownames(beta_q1n_mat) %in% sample_metadata_beta$EHI_number,
+  colnames(beta_q1n_mat) %in% sample_metadata_beta$EHI_number
+]
+
+beta_q1n_dis <- as.dist(beta_q1n_filtered)
+
+sample_metadata_q1n <- sample_metadata_beta %>%
+  filter(EHI_number %in% labels(beta_q1n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1n_dis))) %>%
+  column_to_rownames("EHI_number")
+
+all(rownames(sample_metadata_q1n) == labels(beta_q1n_dis))
+
+betadisper(beta_q1n_dis, sample_metadata_q1n$water_temp) %>%
+  permutest(pairwise = TRUE)
+
+adonis2(
+  beta_q1n_dis ~ water_temp,
+  data = sample_metadata_q1n,
+  permutations = 999
+) %>%
+  broom::tidy() %>%
+  tt()
+```
+
+```{r}
+# Phylogenetic beta diversity, q = 1
+
+beta_q1p_mat <- as.matrix(beta_q1p$q1S)
+
+beta_q1p_filtered <- beta_q1p_mat[
+  rownames(beta_q1p_mat) %in% sample_metadata_beta$EHI_number,
+  colnames(beta_q1p_mat) %in% sample_metadata_beta$EHI_number
+]
+
+beta_q1p_dis <- as.dist(beta_q1p_filtered)
+
+sample_metadata_q1p <- sample_metadata_beta %>%
+  filter(EHI_number %in% labels(beta_q1p_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1p_dis))) %>%
+  column_to_rownames("EHI_number")
+
+all(rownames(sample_metadata_q1p) == labels(beta_q1p_dis))
+
+betadisper(beta_q1p_dis, sample_metadata_q1p$water_temp) %>%
+  permutest(pairwise = TRUE)
+
+adonis2(
+  beta_q1p_dis ~ water_temp,
+  data = sample_metadata_q1p,
+  permutations = 999
+) %>%
+  broom::tidy() %>%
+  tt()
+```
+
+```{r}
+nmds_beta <- beta_q1n_dis %>%
+  vegan::metaMDS(trymax = 500, k = 2, trace = 0) %>%
+  vegan::scores() %>%
+  as_tibble(rownames = "sample") %>%
+  left_join(sample_metadata_beta, by = join_by(sample == EHI_number)) %>%
+  group_by(water_temp) %>%
+  mutate(
+    x_cen = mean(NMDS1, na.rm = TRUE),
+    y_cen = mean(NMDS2, na.rm = TRUE)
+  ) %>%
+  ungroup()
+```
+```{r}
+nmds_beta %>%
+  ggplot(aes(x = NMDS1, y = NMDS2, color = water_temp)) +
+  geom_point(size = 3, alpha = 0.6) +
+  geom_segment(
+    aes(x = x_cen, y = y_cen, xend = NMDS1, yend = NMDS2),
+    alpha = 0.4,
+    show.legend = TRUE
+  ) +
+  scale_color_manual(
+  values = c(
+    "10" = "blue",
+    "20" = "red"
+  )
+  ) +
+  theme_classic()
+```
+```{r}
+nmds_beta_FMT <- beta_q1n_dis %>%
+  vegan::metaMDS(trymax = 500, k = 2, trace = 0) %>%
+  vegan::scores() %>%
+  as_tibble(rownames = "sample") %>%
+  left_join(sample_metadata_beta, by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("post-ABX", "post-FMT")) %>%
+  group_by(experiment_phase) %>%
+  mutate(
+    x_cen = mean(NMDS1, na.rm = TRUE),
+    y_cen = mean(NMDS2, na.rm = TRUE)
+  ) %>%
+  ungroup()
+```
+```{r}
+nmds_beta_FMT %>%
+  ggplot(aes(x = NMDS1, y = NMDS2, color = experiment_phase)) +
+  geom_point(size = 3, alpha = 0.6) +
+  geom_segment(
+    aes(x = x_cen, y = y_cen, xend = NMDS1, yend = NMDS2),
+    alpha = 0.4,
+    show.legend = TRUE
+  ) +
+  scale_color_manual(
+  values = c(
+    "post-ABX" = "red",
+    "post-FMT" = "yellow"
+  )
+  ) +
+  theme_classic()
+```
+```{r}
+nmds_beta_change <- beta_q1n_dis %>%
+  vegan::metaMDS(trymax = 500, k = 2, trace = 0) %>%
+  vegan::scores() %>%
+  as_tibble(rownames = "sample") %>%
+  left_join(sample_metadata_beta, by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("pre-ABX", "post-ABX","post-FMT")) %>%
+  group_by(experiment_phase) %>%
+  mutate(
+    x_cen = mean(NMDS1, na.rm = TRUE),
+    y_cen = mean(NMDS2, na.rm = TRUE)
+  ) %>%
+  ungroup()
+```
+```{r}
+nmds_beta_change %>%
+  ggplot(aes(x = NMDS1, y = NMDS2, color = experiment_phase)) +
+  geom_point(size = 3, alpha = 0.6) +
+  geom_segment(
+    aes(x = x_cen, y = y_cen, xend = NMDS1, yend = NMDS2),
+    alpha = 0.4,
+    show.legend = TRUE
+  ) +
+  scale_color_manual(
+  values = c(
+    "pre-ABX" = "blue",
+    "post-ABX" = "red",
+    "post-FMT" = "yellow"
+  )
+  ) +
+  theme_classic()
+```
+

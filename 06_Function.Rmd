@@ -1,0 +1,208 @@
+---
+title: "06_Function"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Functional differences
+
+genome_counts_gift <- genome_counts_filt[genome_counts_filt$genome %in% rownames(genome_gifts), ]
+
+common_samples <- intersect(
+  sample_metadata$EHI_number,
+  colnames(genome_counts_gift)
+)
+
+genome_counts_gift <- genome_counts_gift %>%
+  select(genome, all_of(common_samples)) %>%
+  column_to_rownames("genome") %>%
+  filter(rowSums(. != 0, na.rm = TRUE) > 0) %>%
+  select_if(~ !all(. == 0)) %>%
+  rownames_to_column("genome")
+
+genome_gifts_filt <- genome_gifts[rownames(genome_gifts) %in% genome_counts_gift$genome, ]
+genome_gifts_filt <- genome_gifts_filt[, colSums(genome_gifts_filt != 0) > 0]
+```
+
+```{r}
+# Aggregate bundle-level GIFTs into element level
+GIFTs_elements <- to.elements(genome_gifts_filt, GIFT_db)
+
+GIFTs_elements_filtered <- GIFTs_elements[
+  rownames(GIFTs_elements) %in% genome_counts_gift$genome,]
+
+GIFTs_elements_filtered <- as.data.frame(GIFTs_elements_filtered) %>%
+  select_if(~ !is.numeric(.) || sum(.) != 0)
+
+# Aggregate element-level GIFTs into function level
+GIFTs_functions <- to.functions(GIFTs_elements_filtered, GIFT_db)
+
+# Aggregate function-level GIFTs into domains
+GIFTs_domains <- to.domains(GIFTs_functions, GIFT_db)
+```
+
+```{r}
+# Community-weighted average GIFTs per sample
+genome_counts_row <- genome_counts_gift %>%
+  mutate_at(vars(-genome), ~ . / sum(.)) %>%
+  column_to_rownames("genome")
+
+GIFTs_elements_community <- to.community(GIFTs_elements_filtered, genome_counts_row, GIFT_db)
+GIFTs_functions_community <- to.community(GIFTs_functions, genome_counts_row, GIFT_db)
+GIFTs_domains_community <- to.community(GIFTs_domains, genome_counts_row, GIFT_db)
+```
+
+```{r}
+MCI <- GIFTs_functions_community %>%
+  rowMeans() %>%
+  as_tibble(rownames = "sample") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  mutate(water_temp = factor(water_temp, levels = c(10, 20)))
+```
+
+```{r}
+MCI %>%
+  group_by(water_temp) %>%
+  summarise(
+    mean = round(mean(value, na.rm = TRUE), 3),
+    sd = round(sd(value, na.rm = TRUE), 3),
+    .groups = "drop"
+  ) %>%
+  mutate(MCI = str_c(mean, " +/- ", sd)) %>%
+  select(water_temp, MCI) %>%
+  rename("Water Temp" = water_temp) %>%
+  tt()
+```
+
+```{r}
+shapiro.test(residuals(lm(value ~ water_temp, data = MCI)))
+bartlett.test(value ~ water_temp, data = MCI)
+
+wilcox.test(value ~ water_temp, data = MCI)
+```
+```{r}
+function_matrix <- GIFTs_functions_community %>%
+  as.data.frame() %>%
+  as.matrix()
+
+metadata <- sample_metadata %>%
+  select(EHI_number, water_temp) %>%
+  mutate(water_temp = factor(water_temp, levels = c(10, 20))) %>%
+  column_to_rownames("EHI_number")
+
+metadata <- metadata[rownames(function_matrix), , drop = FALSE]
+
+stopifnot(all(rownames(function_matrix) %in% rownames(metadata)))
+stopifnot(all(rownames(function_matrix) == rownames(metadata)))
+
+adonis2(
+  function_matrix ~ water_temp,
+  data = metadata,
+  method = "euclidean",
+  permutations = 999
+)
+```
+
+```{r}
+element_gift <- GIFTs_elements_community %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  left_join(
+    sample_metadata %>%
+      select(EHI_number, water_temp) %>%
+      mutate(water_temp = factor(water_temp, levels = c(10, 20))),
+    by = join_by(sample == EHI_number)
+  )
+```
+
+```{r}
+uniqueGIFT_db <- unique(GIFT_db[c(2, 4, 5, 6)]) %>%
+  unite("Function", Function:Element, sep = "_", remove = FALSE)
+```
+
+```{r}
+significant_elements <- element_gift %>%
+  pivot_longer(
+    -c(sample, water_temp),
+    names_to = "trait",
+    values_to = "value"
+  ) %>%
+  group_by(trait) %>%
+  summarise(
+    p_value = wilcox.test(value ~ water_temp)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(p_adjust = p.adjust(p_value, method = "BH")) %>%
+  filter(p_adjust < 0.05)
+```
+```{r}
+selected_data <- element_gift %>%
+  pivot_longer(
+    -c(sample, water_temp),
+    names_to = "trait",
+    values_to = "value"
+  ) %>%
+  filter(trait %in% significant_elements$trait)
+```
+
+```{r}
+pairwise_results <- selected_data %>%
+  group_by(trait) %>%
+  rstatix::wilcox_test(value ~ water_temp, p.adjust.method = "BH") %>%
+  ungroup() %>%
+  filter(p < 0.05) %>%
+  mutate(comparison = paste(group1, "vs", group2)) %>%
+  left_join(uniqueGIFT_db, by = join_by(trait == Code_element))
+```
+
+```{r}
+plot_elem <- ggplot(pairwise_results, aes(x = comparison, y = fct_rev(Function))) +
+  geom_tile(aes(fill = p), color = "white") +
+  scale_fill_gradient(
+    low = "#b30000",
+    high = "#fef0d9",
+    name = "p-value"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Significant Functional Differences by Water Temperature",
+    x = "Water Temperature Comparison",
+    y = "Trait"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+```{r}
+plot_data <- element_gift %>%
+  pivot_longer(
+    -c(sample, water_temp),
+    names_to = "trait",
+    values_to = "value"
+  ) %>%
+  filter(trait %in% pairwise_results$trait) %>%
+  left_join(uniqueGIFT_db, by = join_by(trait == Code_element))
+```
+```{r}
+plot_data %>%
+  ggplot(aes(x = water_temp, y = value, fill = water_temp, color = water_temp)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.2, size = 1, alpha = 0.4) +
+  facet_wrap(~ Function, scales = "free_y", ncol = 4) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 12)) +
+  labs(
+    x = "Water Temperature",
+    y = "Community-weighted functional value",
+    fill = "Water Temp",
+    color = "Water Temp"
+  )
+```

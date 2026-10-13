@@ -190,7 +190,7 @@ mag_enriched_10 %>%
 ```
 ```{r}
 ## Plotting
-taxonomy <- genome_metadata_bacteria %>%
+taxonomy <- genome_metadata %>%
   distinct(genome, phylum) %>%
   rename(taxon = genome)
 
@@ -213,7 +213,7 @@ plot_data <- mag_water_temp %>%
       TRUE ~ NA_character_
     )
   ) %>%
-  left_join(genome_metadata_bacteria, by = join_by(taxon == genome))
+  left_join(genome_metadata, by = join_by(taxon == genome))
 ```
 ```{r}
 tax_color <- plot_data %>%

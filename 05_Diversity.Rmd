@@ -41,7 +41,7 @@ alpha_div <- richness %>%
 ```
 
 ```{r save_alpha, eval=FALSE}
-save(alpha_div, file="data/alpha_coassemblies.RData")
+save(alpha_div, file="data/coassemblies_alpha.RData")
 ```
 
 ```{r}

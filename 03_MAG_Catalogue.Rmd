@@ -87,7 +87,7 @@ ggplot(genome_metadata_bacteria, aes(x = size )) +
   geom_histogram(binwidth = 100000, color = "black", fill = "grey70") +
   theme_classic() +
   labs(
-    x = "size",
+    x = "genome size",
     y = "Number of MAGs"
   )
 ```
@@ -95,7 +95,8 @@ ggplot(genome_metadata_bacteria, aes(x = size )) +
 ## Genome quality
 
 ```{r}
-genome_metadata_bacteria %>% 
+genome_metadata
+%>% 
   summarise(contamination_mean=mean(contamination),sd_cont=sd(contamination),completeness_mean=mean(completeness),sd_comp=sd(completeness)) %>%
   mutate(contamination=str_c(round(contamination_mean,2),"±",round(sd_cont,2)),
          completeness=str_c(round(completeness_mean,2),"±",round(sd_comp,2))) %>% 

@@ -1,0 +1,300 @@
+---
+title: "07_FMT"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# a visual look at the relative abundance after FMT
+genome_counts_filt %>%
+  mutate_at(vars(-genome),~./sum(.)) %>% 
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>% 
+  left_join(., genome_metadata, by = join_by(genome == genome)) %>% 
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0) %>% 
+  filter(experiment_broad == "post-FMT") %>%
+  ggplot(., aes(x=sample,y=count, fill=phylum, group=phylum)) + 
+    geom_bar(stat="identity", colour="white", linewidth=0.1) + 
+    scale_fill_manual(values=phylum_colors) +
+    facet_grid(~ experimental_group, scale="free", space="free")+
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+          axis.title.x = element_blank(),
+          panel.background = element_blank(),
+          panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "white"),
+    strip.text = element_text(size = 8, lineheight = 0.6),
+    strip.placement = "outside",
+    axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line = element_line(linewidth = 0.5, linetype = "solid", colour = "black")) +
+   labs(fill="Phylum",y = "Relative abundance",x="samples")
+```
+```{r}
+# G1 pre and post- FMT
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experimental_group == "G1",
+         experiment_broad %in% c("pre-ABX", "post-FMT")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("pre-ABX", "post-FMT")
+  )) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+```{r}
+# G2 pre and post- FMT
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experimental_group == "G2",
+         experiment_broad %in% c("pre-ABX", "post-FMT")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("pre-ABX", "post-FMT")
+  )) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+```{r}
+# G3 pre and post- FMT
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experimental_group == "G3",
+         experiment_broad %in% c("pre-ABX", "post-FMT")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("pre-ABX", "post-FMT")
+  )) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+```{r}
+# G4 pre and post- FMT
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experimental_group == "G4",
+         experiment_broad %in% c("pre-ABX", "post-FMT")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("pre-ABX", "post-FMT")
+  )) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+```{r}
+# Pre v. Post ABX
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experiment_broad %in% c("pre-ABX", "post-ABX")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("pre-ABX", "post-ABX")
+  )) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+
+```{r}
+# along the course of ABX
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experiment_broad %in% c("ABX1", "ABX2", "ABX3", "ABX4", "ABX5")) %>%
+  mutate(experiment_broad = factor(
+    experiment_broad,
+    levels = c("ABX1", "ABX2", "ABX3", "ABX4", "ABX5"))) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_broad, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```
+```{r}
+# along the course of FMTs
+genome_counts_filt %>%
+  mutate_at(vars(-genome), ~ ./sum(.)) %>%
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>%
+  left_join(genome_metadata, by = join_by(genome == genome)) %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0,
+         experiment_phase %in% c("FMT-2", "FMT-3")) %>%
+  mutate(experiment_phase = factor(
+    experiment_phase,
+    levels = c("FMT-2", "FMT-3"))) %>%
+  ggplot(aes(x = sample, y = count, fill = phylum, group = phylum)) +
+    geom_bar(stat = "identity", colour = "white", linewidth = 0.1) +
+    scale_fill_manual(values = phylum_colors) +
+    facet_grid(~ experiment_phase, scales = "free", space = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+      axis.title.x = element_blank(),
+      panel.background = element_blank(),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 8, lineheight = 0.6),
+      strip.placement = "outside",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line = element_line(
+        linewidth = 0.5,
+        linetype = "solid",
+        colour = "black"
+      )
+    ) +
+    labs(fill = "Phylum", y = "Relative abundance", x = "Samples")
+```

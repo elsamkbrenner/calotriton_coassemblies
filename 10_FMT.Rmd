@@ -1,0 +1,954 @@
+---
+title: "10_FMT"
+author: "Elsa"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+genome_counts_filt %>%
+  mutate_at(vars(-genome),~./sum(.)) %>% 
+  pivot_longer(-genome, names_to = "sample", values_to = "count") %>% 
+  left_join(., genome_metadata, by = join_by(genome == genome)) %>% 
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(count > 0) %>% 
+  ggplot(., aes(x=sample,y=count, fill=phylum, group=phylum)) + 
+    geom_bar(stat="identity", colour="white", linewidth=0.1) + 
+    scale_fill_manual(values=phylum_colors) +
+    facet_nested(. ~ factor (experiment_phase, levels=c("PRE-1", "PRE-2", "PRE-3", "TEMP-1", "ABX-1", "ABX-2","ABX-3","ABX-4","ABX-5","POST-ABX","FMT-1", "FMT-2", "FMT-3", "POST-1", "POST-2", "POST-3", "POST-4")) + experimental_group , scales = "free") +
+    guides(fill = guide_legend(ncol = 1)) +
+    theme(
+          axis.title.x = element_blank(),
+          panel.background = element_blank(),
+          panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "white"),
+    strip.text = element_text(size = 8, lineheight = 0.6),
+    strip.placement = "outside",
+    axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line = element_line(linewidth = 0.5, linetype = "solid", colour = "black")) +
+   labs(fill="Phylum",y = "Relative abundance",x="samples")
+```
+
+Differences between PRE- treatment and POST-1 (first week) after FMT, across the treatment groups
+```{r}
+# Richness
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1"),
+         metric == "richness") %>%
+  mutate(combined_phase = if_else(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3"),"PRE","POST-1"),
+    combined_phase = factor(combined_phase,levels = c("PRE", "POST-1")),
+    experimental_group = factor(experimental_group))
+```
+```{r}
+Modelq0LMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq0LMM)
+```
+```{r}
+emmeans(
+  Modelq0LMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+```{r}
+# Neutral
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1"),
+         metric == "neutral") %>%
+  mutate(combined_phase = if_else(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3"),"PRE","POST-1"),
+    combined_phase = factor(combined_phase,levels = c("PRE", "POST-1")),
+    experimental_group = factor(experimental_group))
+```
+```{r}
+Modelq1nLMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq1nLMM)
+```
+```{r}
+emmeans(
+  Modelq1nLMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+```{r}
+# Phylogenetic
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1"),
+         metric == "phylogenetic") %>%
+  mutate(combined_phase = if_else(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3"),"PRE","POST-1"),
+    combined_phase = factor(combined_phase,levels = c("PRE", "POST-1")),
+    experimental_group = factor(experimental_group))
+```
+```{r}
+Modelq1pLMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq1pLMM)
+```
+```{r}
+emmeans(
+  Modelq1pLMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+```{r}
+#Plotting
+alpha_div %>%
+  pivot_longer(-sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter((experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1"))) %>%
+  mutate(combined_phase = if_else(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3"),"PRE","POST-1"),
+    combined_phase = factor(combined_phase,levels = c("PRE", "POST-1")),
+    metric = factor(
+      metric,levels = c("richness", "neutral", "phylogenetic"),
+      labels = c("Richness", "Neutral", "Phylogenetic")),
+    experimental_group = factor(experimental_group, levels = c("G1", "G2", "G3", "G4"))) %>%
+  ggplot(aes(
+    x = combined_phase,
+    y = value,
+    fill = experimental_group,
+    color = experimental_group
+  )) +
+  geom_boxplot(
+    alpha = 0.4,
+    outlier.shape = NA
+  ) +
+  geom_point(
+    position = position_jitter(width = 0.15),
+    alpha = 0.5,
+    size = 1.5
+  ) +
+  facet_grid(
+    metric ~ experimental_group,
+    scales = "free_y"
+  ) +
+  labs(
+    x = "Experiment phase",
+    y = "Alpha diversity",
+    color = "Experimental group",
+    fill = "Experimental group"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 10),
+    strip.text = element_text(face = "bold"),
+    legend.position = "none"
+  )
+```
+```{r}
+# Looking only at POST, phylogenetic alpha diversity
+alpha_div %>%
+  pivot_longer(-sample, names_to = "metric", values_to = "value") %>%
+  left_join(sample_metadata, by = join_by(sample == EHI_number)) %>%
+  filter(
+    experiment_phase == "POST-1",
+    metric == "phylogenetic"
+  ) %>%
+  ggplot(aes(
+    y = value,
+    x = experimental_group,
+    group = experimental_group,
+    color = experimental_group,
+    fill = experimental_group
+  )) +
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  theme_classic()
+```
+Beta div across experimenal-groups, in the first week post-FMT
+```{r}
+samples_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-1")) %>%
+  select(EHI_number) %>% 
+  pull()
+
+sample_metadata_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-1"))
+
+length(samples_beta_FMT)
+```
+```{r}
+# Richness
+beta_q0n_mat <- as.matrix(beta_q0n$q0S)
+beta_q0n_filtered_FMT <- beta_q0n_mat[
+  rownames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q0n_dis <- as.dist(beta_q0n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q0n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q0n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q0n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q0n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q0n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# Neutral
+beta_q1n_mat <- as.matrix(beta_q1n$q1S)
+beta_q1n_filtered_FMT <- beta_q1n_mat[
+  rownames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1n_dis <- as.dist(beta_q1n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# All six pairwise comparisons
+group_pairs <- combn(c("G1", "G2", "G3", "G4"), 2,
+                     simplify = FALSE)
+
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q1n_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+#Plotting
+beta_q1n_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Neutral beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+```{r}
+# Phylogenetic
+beta_q1p_mat <- as.matrix(beta_q1p$q1S)
+beta_q1p_filtered_FMT <- beta_q1p_mat[
+  rownames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1p_dis <- as.dist(beta_q1p_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1p_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1p_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1p_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1p_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1p_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q1p_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+beta_q1p_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Phylogenetic beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+
+Now, comparing 1 PRE- v. the remaining weeks post FMT (POST-2-4)
+```{r}
+# Richness
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1", "POST-2", "POST-3", "POST-4"),
+         metric == "richness") %>%
+  mutate(
+    combined_phase = case_when(
+      experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3") ~ "PRE",
+      experiment_phase == "POST-1" ~ "POST-1",
+      experiment_phase == "POST-2" ~ "POST-2", 
+      experiment_phase == "POST-3" ~ "POST-3",
+      experiment_phase == "POST-4" ~ "POST-4"
+    ),
+    combined_phase = factor(
+      combined_phase,
+      levels = c("PRE", "POST-1", "POST-2", "POST-3", "POST-4")
+    ),
+    experimental_group = factor(experimental_group)
+  )
+```
+```{r}
+Modelq0LMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq0LMM)
+```
+```{r}
+emmeans(
+  Modelq0LMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+```{r}
+# Neutral
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+  filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1", "POST-2", "POST-3", "POST-4"),
+         metric == "neutral") %>%
+  mutate(
+    combined_phase = case_when(
+      experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3") ~ "PRE",
+      experiment_phase == "POST-1" ~ "POST-1",
+      experiment_phase == "POST-2" ~ "POST-2", 
+      experiment_phase == "POST-3" ~ "POST-3",
+      experiment_phase == "POST-4" ~ "POST-4"
+    ),
+    combined_phase = factor(
+      combined_phase,
+      levels = c("PRE", "POST-1", "POST-2", "POST-3", "POST-4")
+    ),
+    experimental_group = factor(experimental_group)
+  )
+```
+```{r}
+Modelq1nLMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq1nLMM)
+```
+```{r}
+emmeans(
+  Modelq1nLMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+```{r}
+# Phylogenetic
+alpha_div_meta <- alpha_div %>%pivot_longer(cols = -sample,names_to = "metric",values_to = "value") %>%
+  left_join(sample_metadata,by = join_by(sample == EHI_number)) %>%
+   filter(experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3", "POST-1", "POST-2", "POST-3", "POST-4"),
+         metric == "phylogenetic") %>%
+  mutate(
+    combined_phase = case_when(
+      experiment_phase %in% c("PRE-1", "PRE-2", "PRE-3") ~ "PRE",
+      experiment_phase == "POST-1" ~ "POST-1",
+      experiment_phase == "POST-2" ~ "POST-2", 
+      experiment_phase == "POST-3" ~ "POST-3",
+      experiment_phase == "POST-4" ~ "POST-4"
+    ),
+    combined_phase = factor(
+      combined_phase,
+      levels = c("PRE", "POST-1", "POST-2", "POST-3", "POST-4")
+    ),
+    experimental_group = factor(experimental_group)
+  )
+```
+```{r}
+Modelq1pLMM <- lmer(value ~ experimental_group*combined_phase+(1|animal_ID), data = alpha_div_meta)
+summary(Modelq1pLMM)
+```
+```{r}
+emmeans(
+  Modelq1pLMM,
+  pairwise ~ experimental_group | combined_phase,
+  adjust = "BH"
+)
+```
+
+Beta div for the remaining weeks:
+
+POST-2
+```{r}
+samples_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-2")) %>%
+  select(EHI_number) %>% 
+  pull()
+
+sample_metadata_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-2"))
+
+length(samples_beta_FMT)
+```
+```{r}
+# Richness
+beta_q0n_mat <- as.matrix(beta_q0n$q0S)
+beta_q0n_filtered_FMT <- beta_q0n_mat[
+  rownames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q0n_dis <- as.dist(beta_q0n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q0n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q0n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q0n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q0n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q0n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# Neutral
+beta_q1n_mat <- as.matrix(beta_q1n$q1S)
+beta_q1n_filtered_FMT <- beta_q1n_mat[
+  rownames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1n_dis <- as.dist(beta_q1n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# Phylogenetic
+beta_q1p_mat <- as.matrix(beta_q1p$q1S)
+beta_q1p_filtered_FMT <- beta_q1p_mat[
+  rownames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1p_dis <- as.dist(beta_q1p_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1p_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1p_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1p_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1p_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1p_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+
+POST-3
+(low number of samples makes the statistical power of POST-3 very low)
+```{r}
+samples_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-3")) %>%
+  select(EHI_number) %>% 
+  pull()
+
+sample_metadata_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-3"))
+
+length(samples_beta_FMT)
+```
+```{r}
+# Richness
+beta_q0n_mat <- as.matrix(beta_q0n$q0S)
+beta_q0n_filtered_FMT <- beta_q0n_mat[
+  rownames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q0n_dis <- as.dist(beta_q0n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q0n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q0n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q0n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q0n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q0n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# Neutral
+beta_q1n_mat <- as.matrix(beta_q1n$q1S)
+beta_q1n_filtered_FMT <- beta_q1n_mat[
+  rownames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1n_dis <- as.dist(beta_q1n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# All six pairwise comparisons
+group_pairs <- combn(c("G1", "G2", "G3", "G4"), 2,
+                     simplify = FALSE)
+
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q1n_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+#Plotting
+beta_q1n_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Neutral beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+```{r}
+# Phylogenetic
+beta_q1p_mat <- as.matrix(beta_q1p$q1S)
+beta_q1p_filtered_FMT <- beta_q1p_mat[
+  rownames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1p_dis <- as.dist(beta_q1p_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1p_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1p_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1p_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1p_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1p_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q1p_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+beta_q1p_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Phylogenetic beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+POST-Combined (w/o week 1)
+```{r}
+samples_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-2", "POST-3", "POST-4")) %>%
+  select(EHI_number) %>% 
+  pull()
+
+sample_metadata_beta_FMT <- sample_metadata %>%
+  filter(experiment_phase %in% c("POST-2", "POST-3", "POST-4"))
+
+length(samples_beta_FMT)
+```
+```{r}
+# Richness
+beta_q0n_mat <- as.matrix(beta_q0n$q0S)
+beta_q0n_filtered_FMT <- beta_q0n_mat[
+  rownames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q0n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q0n_dis <- as.dist(beta_q0n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q0n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q0n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q0n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q0n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q0n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# All six pairwise comparisons
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q0n_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+#Plotting
+beta_q0n_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n q=0 beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+
+```{r}
+# Neutral
+beta_q1n_mat <- as.matrix(beta_q1n$q1S)
+beta_q1n_filtered_FMT <- beta_q1n_mat[
+  rownames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1n_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1n_dis <- as.dist(beta_q1n_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1n_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1n_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1n_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1n_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1n_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+# All six pairwise comparisons
+pairwise_permanova <- map_dfr(group_pairs, function(pair) {
+
+  # Select samples from the two groups
+  keep <- sample_metadata_beta_FMT$experimental_group %in% pair
+  meta_sub <- droplevels(sample_metadata_beta_FMT[keep, ])
+
+  # Subset the distance matrix in matching order
+  samples_sub <- meta_sub$EHI_number
+  dist_sub <- as.dist(
+    as.matrix(beta_q1n_dis)[samples_sub, samples_sub, drop = FALSE]
+  )
+
+  # Run PERMANOVA
+  set.seed(123)
+  result <- adonis2(
+    dist_sub ~ experimental_group,
+    data = meta_sub,
+    permutations = 999
+  )
+
+  tibble(
+    group_1 = pair[1],
+    group_2 = pair[2],
+    F_value = result$F[1],
+    R2 = result$R2[1],
+    p_value = result$`Pr(>F)`[1]
+  )
+})
+
+pairwise_permanova <- pairwise_permanova %>%
+  mutate(
+    p_adjusted_BH = p.adjust(p_value, method = "BH"),
+    significant = p_adjusted_BH < 0.05
+  )
+
+pairwise_permanova
+```
+```{r}
+#Plotting
+beta_q1n_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Neutral beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```
+```{r}
+# Phylogenetic
+beta_q1p_mat <- as.matrix(beta_q1p$q1S)
+beta_q1p_filtered_FMT <- beta_q1p_mat[
+  rownames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number,
+  colnames(beta_q1p_mat) %in% sample_metadata_beta_FMT$EHI_number
+]
+beta_q1p_dis <- as.dist(beta_q1p_filtered_FMT)
+
+sample_metadata_beta_FMT_ordered <- sample_metadata_beta_FMT %>%
+  filter(EHI_number %in% labels(beta_q1p_dis)) %>%
+  arrange(match(EHI_number, labels(beta_q1p_dis))) %>%
+  column_to_rownames(., "EHI_number")
+
+betadisper(beta_q1p_dis, sample_metadata_beta_FMT_ordered$experimental_group) %>% permutest(., pairwise = TRUE) 
+```
+```{r}
+adonis2(beta_q1p_dis ~ experimental_group,
+        data = sample_metadata_beta_FMT %>% arrange(match(EHI_number,labels(beta_q1p_dis))),
+        permutations = 999) %>%
+        broom::tidy() %>%
+        tt()
+```
+```{r}
+beta_q1p_dis %>%
+                metaMDS(.,trymax = 500, k=2, verbosity=FALSE, trace=FALSE) %>%
+                vegan::scores() %>%
+                as_tibble(., rownames = "sample") %>%
+                left_join(sample_metadata_beta_FMT, by = join_by(sample == EHI_number)) %>%
+            group_by(experimental_group) %>%
+            mutate(x_cen = mean(NMDS1, na.rm = TRUE)) %>%
+            mutate(y_cen = mean(NMDS2, na.rm = TRUE)) %>%
+            ungroup() %>%
+            ggplot(., aes(x=NMDS1,y=NMDS2, color=experimental_group)) +
+                geom_point(size=2) +
+                geom_segment(aes(x=x_cen, y=y_cen, xend=NMDS1, yend=NMDS2), alpha=0.2) +
+        labs(y = "NMDS2", x="NMDS1 \n Phylogenetic beta diversity") +
+                theme_classic() +
+                theme(legend.position="none")
+```

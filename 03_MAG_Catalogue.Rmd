@@ -9,6 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r load_data_community}
+load("data/coassemblies_data.Rdata")
+load("data/coassemblies_genome_gifts.Rdata")
+```
 ## Genome phylogeny
 ```{r genome_phylogeny, message=FALSE, warning=FALSE, fig.height=10, fig.width=10, fig.fullwidth=TRUE}
 # Generate the phylum color heatmap
@@ -95,8 +99,7 @@ ggplot(genome_metadata_bacteria, aes(x = size )) +
 ## Genome quality
 
 ```{r}
-genome_metadata
-%>% 
+genome_metadata %>% 
   summarise(contamination_mean=mean(contamination),sd_cont=sd(contamination),completeness_mean=mean(completeness),sd_comp=sd(completeness)) %>%
   mutate(contamination=str_c(round(contamination_mean,2),"±",round(sd_cont,2)),
          completeness=str_c(round(completeness_mean,2),"±",round(sd_comp,2))) %>% 

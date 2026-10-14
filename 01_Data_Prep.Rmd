@@ -14,7 +14,7 @@ Load Data
 Sample metadata
 ```{r}
 # All sample metadata
-animal_metadata <- read_csv("data/animal_metadata.csv")
+animal_metadata <- read_csv("data/animal_metadata_14102026.csv")
 sample_metadata <- read_csv("data/Airtable_metadata_coassemblies.csv")  %>%
   left_join(animal_metadata, by = join_by(sample_code == sample))
 ```
